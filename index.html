@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Traffic RL — Reinforcement Learning Traffic Simulator</title>
+  <meta name="description" content="Interactive Reinforcement Learning simulator comparing Q-Learning, SARSA, and Model-Based RL on adaptive traffic signal control.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Header / Top Navbar -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon">
+        <i class="fa-solid fa-traffic-light"></i>
+        <div class="pulse-ring"></div>
+      </div>
+      <div class="brand-text">
+        <h1>Smart Traffic <span class="highlight-cyan">RL</span></h1>
+        <span class="sub-badge">Multi-Agent RL Simulator</span>
+      </div>
+    </div>
+
+    <!-- Mode Selector: Single Agent vs Side-by-Side Comparison -->
+    <div class="view-mode-toggle">
+      <button class="mode-btn active" id="btnModeSingle" data-mode="single">
+        <i class="fa-solid fa-crosshairs"></i> Single Agent Focus
+      </button>
+      <button class="mode-btn" id="btnModeCompare" data-mode="compare">
+        <i class="fa-solid fa-columns"></i> Side-by-Side Compare (3x)
+      </button>
+    </div>
+
+    <!-- Quick Global Controls -->
+    <div class="header-actions">
+      <div class="sim-status-pill" id="simStatusPill">
+        <span class="status-dot"></span>
+        <span class="status-label">READY</span>
+      </div>
+      <button class="btn btn-secondary btn-sm" id="btnOpenDocs" title="Explain Algorithms">
+        <i class="fa-solid fa-brain"></i> RL Theory Guide
+      </button>
+      <button class="btn btn-secondary btn-sm" id="btnOpenSettings" title="Configure Simulation">
+        <i class="fa-solid fa-sliders"></i> Parameters
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="app-main">
+    <!-- Top Control Bar -->
+    <section class="control-strip">
+      <!-- Simulation Controls -->
+      <div class="control-group">
+        <button class="btn btn-primary" id="btnPlayPause">
+          <i class="fa-solid fa-play" id="playIcon"></i> <span id="playText">Start Simulation</span>
+        </button>
+        <button class="btn btn-outline" id="btnStep" title="Advance by 1 step">
+          <i class="fa-solid fa-forward-step"></i> Step
+        </button>
+        <button class="btn btn-danger-outline" id="btnReset" title="Reset Simulation">
+          <i class="fa-solid fa-rotate-right"></i> Reset
+        </button>
+      </div>
+
+      <div class="divider-vertical"></div>
+
+      <!-- Speed Control -->
+      <div class="control-group">
+        <span class="control-label"><i class="fa-solid fa-gauge-high"></i> Speed:</span>
+        <div class="speed-selector">
+          <button class="speed-chip" data-speed="0.5">0.5x</button>
+          <button class="speed-chip active" data-speed="1">1x</button>
+          <button class="speed-chip" data-speed="2">2x</button>
+          <button class="speed-chip" data-speed="5">5x</button>
+          <button class="speed-chip" data-speed="15">Max Turbo</button>
+        </div>
+      </div>
+
+      <div class="divider-vertical"></div>
+
+      <!-- Algorithm Selector (Single View Mode) -->
+      <div class="control-group" id="singleAlgorithmPicker">
+        <span class="control-label"><i class="fa-solid fa-microchip"></i> Algorithm:</span>
+        <div class="algo-pill-group">
+          <button class="algo-pill active" data-algo="model_based">
+            <span class="pill-dot violet"></span> Model-Based RL (Dyna-Q)
+          </button>
+          <button class="algo-pill" data-algo="q_learning">
+            <span class="pill-dot cyan"></span> Q-Learning
+          </button>
+          <button class="algo-pill" data-algo="sarsa">
+            <span class="pill-dot green"></span> SARSA
+          </button>
+          <button class="algo-pill" data-algo="fixed_timer">
+            <span class="pill-dot gray"></span> Fixed Baseline
+          </button>
+        </div>
+      </div>
+
+      <!-- Traffic Presets -->
+      <div class="control-group ml-auto">
+        <span class="control-label"><i class="fa-solid fa-car-side"></i> Flow Preset:</span>
+        <select id="trafficPresetSelect" class="styled-select">
+          <option value="balanced">Balanced 50/50 Flow</option>
+          <option value="rush_ns">NS Rush Hour (Heavy NS, Light EW)</option>
+          <option value="rush_ew">EW Rush Hour (Heavy EW, Light NS)</option>
+          <option value="bursts">Random Spikes & Gridlocks</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- Main Content Area: Interactive Dashboard -->
+    <div class="dashboard-grid">
+      <!-- Left Column: Simulation Canvas & Live Phase Telemetry -->
+      <div class="sim-column">
+        <!-- Single Mode View -->
+        <div class="sim-card card-elevated" id="singleSimContainer">
+          <div class="card-header">
+            <div class="title-with-badge">
+              <span class="phase-indicator" id="phaseIndicatorBadge">NS GREEN</span>
+              <h2 id="activeAlgoTitle">Model-Based RL (Dyna-Q) Simulation</h2>
+            </div>
+            <div class="card-actions">
+              <span class="hud-item" title="Decision Interval"><i class="fa-regular fa-clock"></i> Next Decision: <b id="hudCountdown">1.8s</b></span>
+              <span class="hud-item" title="Episodes Trained"><i class="fa-solid fa-graduation-cap"></i> Episodes: <b id="hudEpisodes">1</b></span>
+            </div>
+          </div>
+
+          <div class="canvas-wrapper">
+            <canvas id="trafficCanvas" width="600" height="600"></canvas>
+            
+            <!-- In-Canvas Overlay HUD -->
+            <div class="canvas-overlay-hud">
+              <div class="lane-stat north-stat">
+                <i class="fa-solid fa-arrow-down"></i> North: <span id="queueNorthCount">0</span> waiting
+              </div>
+              <div class="lane-stat south-stat">
+                <i class="fa-solid fa-arrow-up"></i> South: <span id="queueSouthCount">0</span> waiting
+              </div>
+              <div class="lane-stat east-stat">
+                <i class="fa-solid fa-arrow-left"></i> East: <span id="queueEastCount">0</span> waiting
+              </div>
+              <div class="lane-stat west-stat">
+                <i class="fa-solid fa-arrow-right"></i> West: <span id="queueWestCount">0</span> waiting
+              </div>
+              
+              <!-- Agent Decision Toast -->
+              <div class="agent-decision-toast" id="decisionToast">
+                <span class="decision-algo">Model-Based RL</span>
+                <span class="decision-action">Action: KEEP_PHASE (Reward: +4.2)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Canvas Legend -->
+          <div class="canvas-footer-legend">
+            <span class="legend-chip"><span class="dot-color red"></span> Congested (>8)</span>
+            <span class="legend-chip"><span class="dot-color amber"></span> Moderate (4-8)</span>
+            <span class="legend-chip"><span class="dot-color green"></span> Smooth (<4)</span>
+            <span class="legend-chip"><i class="fa-solid fa-bolt text-cyan"></i> Adaptive RL Decisions</span>
+          </div>
+        </div>
+
+        <!-- Multi Mode View (Hidden by default, shown when user clicks Side-by-Side) -->
+        <div class="compare-sim-container hidden" id="compareSimContainer">
+          <div class="compare-grid">
+            <!-- Sim 1: Model-Based RL -->
+            <div class="mini-sim-card card-elevated border-violet">
+              <div class="mini-card-header">
+                <span class="badge badge-violet">Model-Based RL (Dyna-Q)</span>
+                <span class="mini-phase" id="phaseMiniMB">NS GREEN</span>
+              </div>
+              <canvas id="canvasMB" width="300" height="300"></canvas>
+              <div class="mini-stats">
+                <div>Wait: <b id="waitMiniMB" class="text-violet">0.0s</b></div>
+                <div>Queue: <b id="queueMiniMB">0</b></div>
+                <div>Throughput: <b id="thruMiniMB">0</b></div>
+              </div>
+            </div>
+
+            <!-- Sim 2: Q-Learning -->
+            <div class="mini-sim-card card-elevated border-cyan">
+              <div class="mini-card-header">
+                <span class="badge badge-cyan">Q-Learning (Off-Policy)</span>
+                <span class="mini-phase" id="phaseMiniQL">NS GREEN</span>
+              </div>
+              <canvas id="canvasQL" width="300" height="300"></canvas>
+              <div class="mini-stats">
+                <div>Wait: <b id="waitMiniQL" class="text-cyan">0.0s</b></div>
+                <div>Queue: <b id="queueMiniQL">0</b></div>
+                <div>Throughput: <b id="thruMiniQL">0</b></div>
+              </div>
+            </div>
+
+            <!-- Sim 3: SARSA -->
+            <div class="mini-sim-card card-elevated border-green">
+              <div class="mini-card-header">
+                <span class="badge badge-green">SARSA (On-Policy)</span>
+                <span class="mini-phase" id="phaseMiniSA">NS GREEN</span>
+              </div>
+              <canvas id="canvasSA" width="300" height="300"></canvas>
+              <div class="mini-stats">
+                <div>Wait: <b id="waitMiniSA" class="text-green">0.0s</b></div>
+                <div>Queue: <b id="queueMiniSA">0</b></div>
+                <div>Throughput: <b id="thruMiniSA">0</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Metrics, Live Comparison Charts, Q-Table / Value Inspector -->
+      <div class="analytics-column">
+        <!-- 4 Key Telemetry Metric Cards -->
+        <div class="metrics-row">
+          <div class="metric-card card-elevated">
+            <div class="metric-icon cyan-bg">
+              <i class="fa-solid fa-stopwatch"></i>
+            </div>
+            <div class="metric-content">
+              <span class="metric-title">Average Wait Time</span>
+              <div class="metric-value-group">
+                <span class="metric-value" id="valAvgWait">0.00</span>
+                <span class="metric-unit">s / car</span>
+              </div>
+              <span class="metric-sub" id="subWaitTrend"><i class="fa-solid fa-arrow-trend-down text-green"></i> -18% vs baseline</span>
+            </div>
+          </div>
+
+          <div class="metric-card card-elevated">
+            <div class="metric-icon violet-bg">
+              <i class="fa-solid fa-chart-line"></i>
+            </div>
+            <div class="metric-content">
+              <span class="metric-title">Cumulative Reward</span>
+              <div class="metric-value-group">
+                <span class="metric-value" id="valReward">0.0</span>
+                <span class="metric-unit">pts</span>
+              </div>
+              <span class="metric-sub" id="subRewardRate">+0.0 / step</span>
+            </div>
+          </div>
+
+          <div class="metric-card card-elevated">
+            <div class="metric-icon green-bg">
+              <i class="fa-solid fa-car-on"></i>
+            </div>
+            <div class="metric-content">
+              <span class="metric-title">Throughput Cleared</span>
+              <div class="metric-value-group">
+                <span class="metric-value" id="valThroughput">0</span>
+                <span class="metric-unit">vehicles</span>
+              </div>
+              <span class="metric-sub" id="subThroughputRate">0.0 cars/min</span>
+            </div>
+          </div>
+
+          <div class="metric-card card-elevated">
+            <div class="metric-icon amber-bg">
+              <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <div class="metric-content">
+              <span class="metric-title">Congestion Index</span>
+              <div class="metric-value-group">
+                <span class="metric-value" id="valCongestion">0%</span>
+                <span class="metric-unit">peak load</span>
+              </div>
+              <div class="progress-bar-container">
+                <div class="progress-bar" id="congestionBar" style="width: 15%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Real-Time Comparison Charts Tabs -->
+        <div class="chart-card card-elevated">
+          <div class="card-header chart-tabs-header">
+            <div class="chart-tabs">
+              <button class="chart-tab active" data-chart="wait">Average Waiting Time</button>
+              <button class="chart-tab" data-chart="reward">Cumulative Rewards</button>
+              <button class="chart-tab" data-chart="congestion">Active Queue / Congestion</button>
+            </div>
+            <div class="chart-legend-pills">
+              <span class="chart-legend-item"><span class="badge-dot dot-violet"></span> Model-Based</span>
+              <span class="chart-legend-item"><span class="badge-dot dot-cyan"></span> Q-Learning</span>
+              <span class="chart-legend-item"><span class="badge-dot dot-green"></span> SARSA</span>
+              <span class="chart-legend-item"><span class="badge-dot dot-gray"></span> Fixed Timer</span>
+            </div>
+          </div>
+          <div class="chart-body">
+            <canvas id="performanceChart" height="200"></canvas>
+          </div>
+        </div>
+
+        <!-- RL Policy & State Inspector Card -->
+        <div class="inspector-card card-elevated">
+          <div class="card-header">
+            <h3><i class="fa-solid fa-network-wired text-cyan"></i> Live Q-Value & Policy Brain</h3>
+            <span class="badge badge-subtle" id="learningRateBadge">α=0.10 | ε=0.15 | γ=0.95</span>
+          </div>
+          <div class="inspector-body">
+            <!-- Left: Current State Representation -->
+            <div class="state-vector-box">
+              <div class="box-label">Observed Environment State $s_t$:</div>
+              <div class="state-chips">
+                <div class="state-chip">
+                  <span class="k">Phase:</span>
+                  <span class="v" id="chipPhase">NS GREEN</span>
+                </div>
+                <div class="state-chip">
+                  <span class="k">Queue NS:</span>
+                  <span class="v text-cyan" id="chipQueueNS">0 cars</span>
+                </div>
+                <div class="state-chip">
+                  <span class="k">Queue EW:</span>
+                  <span class="v text-amber" id="chipQueueEW">0 cars</span>
+                </div>
+                <div class="state-chip">
+                  <span class="k">Phase Duration:</span>
+                  <span class="v" id="chipDuration">4.2s</span>
+                </div>
+              </div>
+
+              <!-- Action-Value Comparison Bars for current state -->
+              <div class="q-actions-container">
+                <div class="q-action-row">
+                  <div class="action-name">Action 0: KEEP_PHASE</div>
+                  <div class="action-bar-wrapper">
+                    <div class="action-bar" id="barActionKeep" style="width: 50%;"></div>
+                  </div>
+                  <div class="action-q-val" id="valQKeep">Q: +0.00</div>
+                </div>
+                <div class="q-action-row">
+                  <div class="action-name">Action 1: SWITCH_PHASE</div>
+                  <div class="action-bar-wrapper">
+                    <div class="action-bar" id="barActionSwitch" style="width: 50%;"></div>
+                  </div>
+                  <div class="action-q-val" id="valQSwitch">Q: +0.00</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: Algorithm Health / Learning Diagnostic -->
+            <div class="algo-diagnostic-box">
+              <div class="box-label">Algorithm Mechanics:</div>
+              <div class="diagnostic-metric">
+                <span>Exploration Policy (ε-greedy):</span>
+                <b id="diagEpsilon" class="text-cyan">15% Explore / 85% Exploit</b>
+              </div>
+              <div class="diagnostic-metric">
+                <span>Model Transitions Learned:</span>
+                <b id="diagModelTransitions" class="text-violet">124 states</b>
+              </div>
+              <div class="diagnostic-metric">
+                <span>Bellman TD Error (δ):</span>
+                <b id="diagTDError" class="text-green">0.042</b>
+              </div>
+              <div class="diagnostic-metric">
+                <span>Light Switch Efficiency:</span>
+                <b id="diagEfficiency">91% optimal</b>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- RL Theory & Algorithm Guide Modal -->
+  <div class="modal-backdrop hidden" id="docsModal">
+    <div class="modal-card card-elevated">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="fa-solid fa-graduation-cap text-cyan"></i>
+          <h2>Reinforcement Learning for Adaptive Traffic Signal Control</h2>
+        </div>
+        <button class="btn-close" id="btnCloseDocs"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body docs-content">
+        <div class="algo-explanation-grid">
+          <!-- Q-Learning -->
+          <div class="algo-card border-cyan">
+            <div class="algo-card-title text-cyan">
+              <i class="fa-solid fa-bolt"></i> Q-Learning (Off-Policy TD)
+            </div>
+            <div class="algo-math">
+              <code>Q(s, a) ← Q(s, a) + α [ r + γ · maxₐ' Q(s', a') - Q(s, a) ]</code>
+            </div>
+            <p>
+              Q-Learning is an <strong>off-policy Temporal Difference</strong> algorithm that directly estimates the optimal action-value function regardless of what action the exploration policy chooses.
+            </p>
+            <ul>
+              <li><strong>Behavior:</strong> Bold, pursues maximum estimated downstream reward.</li>
+              <li><strong>In Traffic:</strong> Aggressively prioritizes lanes with maximum waiting backlog, switching signals decisively.</li>
+            </ul>
+          </div>
+
+          <!-- SARSA -->
+          <div class="algo-card border-green">
+            <div class="algo-card-title text-green">
+              <i class="fa-solid fa-shield-halved"></i> SARSA (On-Policy TD)
+            </div>
+            <div class="algo-math">
+              <code>Q(s, a) ← Q(s, a) + α [ r + γ · Q(s', a') - Q(s, a) ]</code>
+            </div>
+            <p>
+              SARSA (State-Action-Reward-State-Action) is an <strong>on-policy</strong> algorithm. It updates its value estimate using the actual action $a'$ chosen by its current $\epsilon$-greedy policy.
+            </p>
+            <ul>
+              <li><strong>Behavior:</strong> Cautious, factors in potential random mistakes caused by exploration.</li>
+              <li><strong>In Traffic:</strong> Prevents rapid oscillations or premature phase toggling when yellow clearance delays cause penalties.</li>
+            </ul>
+          </div>
+
+          <!-- Model-Based RL -->
+          <div class="algo-card border-violet">
+            <div class="algo-card-title text-violet">
+              <i class="fa-solid fa-brain"></i> Model-Based RL (Dyna-Q)
+            </div>
+            <div class="algo-math">
+              <code>T(s, a) → s',  R(s, a) → r  +  N Planning Steps</code>
+            </div>
+            <p>
+              Model-Based RL builds an internal predictive world model of how vehicle queues respond to signal changes. In addition to real-world experience, it performs <em>hallucinated planning updates</em>.
+            </p>
+            <ul>
+              <li><strong>Behavior:</strong> Highly sample-efficient; learns much faster with fewer real-world traffic jams.</li>
+              <li><strong>In Traffic:</strong> Anticipates queue buildups before they become gridlocks, maintaining maximum vehicle throughput.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="formulation-box">
+          <h3><i class="fa-solid fa-calculator text-cyan"></i> MDP Formulation for this Intersection</h3>
+          <div class="mdp-grid">
+            <div>
+              <strong>State $S$:</strong>
+              <p>Tuple <code>(active_phase, queue_ns_bucket, queue_ew_bucket, elapsed_time_bucket)</code></p>
+            </div>
+            <div>
+              <strong>Action $A$:</strong>
+              <p><code>0: KEEP_PHASE</code> (remain green) or <code>1: SWITCH_PHASE</code> (trigger yellow clearance to flip)</p>
+            </div>
+            <div>
+              <strong>Reward $R$:</strong>
+              <p><code>-(waiting_vehicles) - 0.2 × (avg_delay²) - switch_penalty + throughput_bonus</code></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings & Parameters Modal -->
+  <div class="modal-backdrop hidden" id="settingsModal">
+    <div class="modal-card card-elevated">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="fa-solid fa-sliders text-cyan"></i>
+          <h2>Simulation & Hyperparameter Settings</h2>
+        </div>
+        <button class="btn-close" id="btnCloseSettings"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body settings-grid">
+        <!-- Traffic Density -->
+        <div class="settings-section">
+          <h3><i class="fa-solid fa-road"></i> Traffic Flow & Inflow Rates</h3>
+          <div class="slider-row">
+            <label for="sliderInflowNS">North-South Vehicle Rate:</label>
+            <div class="slider-input">
+              <input type="range" id="sliderInflowNS" min="0.1" max="1.5" step="0.1" value="0.7">
+              <span id="labelInflowNS" class="slider-val">0.7 /s</span>
+            </div>
+          </div>
+          <div class="slider-row">
+            <label for="sliderInflowEW">East-West Vehicle Rate:</label>
+            <div class="slider-input">
+              <input type="range" id="sliderInflowEW" min="0.1" max="1.5" step="0.1" value="0.7">
+              <span id="labelInflowEW" class="slider-val">0.7 /s</span>
+            </div>
+          </div>
+          <div class="slider-row">
+            <label for="sliderMaxSpeed">Vehicle Max Speed:</label>
+            <div class="slider-input">
+              <input type="range" id="sliderMaxSpeed" min="2" max="6" step="0.5" value="3.5">
+              <span id="labelMaxSpeed" class="slider-val">3.5 px/f</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- RL Hyperparameters -->
+        <div class="settings-section">
+          <h3><i class="fa-solid fa-sliders text-cyan"></i> Hyperparameters (All Agents)</h3>
+          <div class="slider-row">
+            <label for="sliderAlpha">Learning Rate (α):</label>
+            <div class="slider-input">
+              <input type="range" id="sliderAlpha" min="0.01" max="0.5" step="0.01" value="0.12">
+              <span id="labelAlpha" class="slider-val">0.12</span>
+            </div>
+          </div>
+          <div class="slider-row">
+            <label for="sliderGamma">Discount Factor (γ):</label>
+            <div class="slider-input">
+              <input type="range" id="sliderGamma" min="0.5" max="0.99" step="0.01" value="0.92">
+              <span id="labelGamma" class="slider-val">0.92</span>
+            </div>
+          </div>
+          <div class="slider-row">
+            <label for="sliderEpsilon">Exploration Rate (ε):</label>
+            <div class="slider-input">
+              <input type="range" id="sliderEpsilon" min="0.01" max="0.5" step="0.01" value="0.15">
+              <span id="labelEpsilon" class="slider-val">0.15</span>
+            </div>
+          </div>
+          <div class="slider-row">
+            <label for="sliderDynaN">Model-Based Planning Steps (N):</label>
+            <div class="slider-input">
+              <input type="range" id="sliderDynaN" min="1" max="15" step="1" value="5">
+              <span id="labelDynaN" class="slider-val">5 steps</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reward Weights -->
+        <div class="settings-section full-width">
+          <h3><i class="fa-solid fa-award text-amber"></i> Reward Function Weights</h3>
+          <div class="weights-row">
+            <div class="slider-row">
+              <label for="sliderPenaltyWait">Delay Penalty Weight:</label>
+              <div class="slider-input">
+                <input type="range" id="sliderPenaltyWait" min="0.1" max="3.0" step="0.1" value="1.0">
+                <span id="labelPenaltyWait" class="slider-val">1.0x</span>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label for="sliderPenaltySwitch">Signal Flip Penalty:</label>
+              <div class="slider-input">
+                <input type="range" id="sliderPenaltySwitch" min="0" max="15" step="1" value="5">
+                <span id="labelPenaltySwitch" class="slider-val">-5.0</span>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label for="sliderBonusThroughput">Throughput Bonus:</label>
+              <div class="slider-input">
+                <input type="range" id="sliderBonusThroughput" min="1" max="20" step="1" value="10">
+                <span id="labelBonusThroughput" class="slider-val">+10.0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btnResetDefaults">Reset to Defaults</button>
+        <button class="btn btn-primary" id="btnApplySettings">Apply & Resume</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="rl_agents.js"></script>
+  <script src="traffic_sim.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
